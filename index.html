@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BankChurnAI - 银行客户流失分析系统</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <!-- 引入Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+
+  <!-- 配置Tailwind自定义颜色 - 浅蓝配色保持不变 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#4A90E2', // 浅蓝主色调
+            secondary: '#7CB9E8', // 浅蓝辅助色
+            accent: '#A7D7F9',  // 浅蓝强调色
+            danger: '#E74C3C',
+            success: '#27AE60'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+
+      .gradient-bg {
+        background: linear-gradient(135deg, #4A90E2 0%, #7CB9E8 100%);
+      }
+    }
+  </style>
+
+  <style>
+    /* 动画效果 */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fadeIn {
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    .form-input-focus {
+      @apply focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none;
+    }
+
+    /* 错误提示样式 */
+    .error-message {
+      @apply text-danger text-xs mt-1 hidden;
+    }
+
+    /* 加载状态样式 */
+    .loading-spinner {
+      @apply w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin hidden;
+    }
+
+    /* 背景图片容器通用样式 - 保留亮度滤镜 */
+    .bg-img-container {
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-blend-mode: multiply; 
+      filter: brightness(1.3);
+    }
+
+    /* 英雄区域背景图 - 保持不变 */
+    .hero-bg {
+      background-image: url('https://images.unsplash.com/photo-1579546929518-9e396f3cc809?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fDE3MTY2NTc0MDV8fHx8&auto=format&fit=crop&w=1974&q=80');
+      background-color: #4A90E2; /* 浅蓝备用色保持不变 */
+    }
+
+    /* 核心功能区域背景图 - 保持不变 */
+    .features-bg {
+      background-image: url('https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fDE2OTM5MjY2NTN8&auto=format&fit=crop&w=2071&q=80');
+      background-color: #7CB9E8;
+    }
+
+    /* 数据概览区域背景图 - 保持不变 */
+    .data-overview-bg {
+      background-image: url('https://images.unsplash.com/photo-1614624532983-4ce03382d63d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fDE2OTM5MjY2NjN8&auto=format&fit=crop&w=2070&q=80');
+      background-color: #4A90E2;
+    }
+
+    /* 条款/详情模态框样式补充 */
+    .terms-modal-content,
+    .detail-modal-content {
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    /* 详情模块卡片样式 */
+    .detail-card {
+      transition: all 0.3s ease;
+    }
+    .detail-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 25px -5px rgba(74, 144, 226, 0.1), 0 8px 10px -6px rgba(74, 144, 226, 0.1);
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 font-sans">
+  <!-- 主容器 -->
+  <div class="min-h-screen flex flex-col">
+    <!-- 导航栏 - 保持不变 -->
+    <header class="bg-white shadow-sm">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <a href="#" class="flex items-center space-x-2">
+          <div class="w-10 h-10 rounded-lg gradient-bg flex items-center justify-center">
+            <i class="fa fa-line-chart text-white"></i>
+          </div>
+          <span class="text-xl font-bold text-primary">BankChurn</span>
+        </a>
+
+        <div class="flex items-center space-x-4">
+          <button id="loginBtn" class="hidden md:block px-4 py-2 text-primary border border-primary rounded-lg hover:bg-primary/5 transition-colors">登录</button>
+          <button id="registerBtn" class="hidden md:block px-4 py-2 gradient-bg text-white rounded-lg hover:opacity-90 transition-opacity">注册</button>
+
+          <!-- 登录后显示的用户信息区域 -->
+          <div id="userMenu" class="hidden items-center space-x-3">
+            <span id="userName" class="text-gray-700"></span>
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+              <i class="fa fa-user text-primary"></i>
+            </div>
+          </div>
+
+          <!-- 移动端菜单按钮 -->
+          <button id="mobileMenuBtn" class="md:hidden text-gray-700">
+            <i class="fa fa-bars text-xl"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 移动端菜单 - 保持不变 -->
+      <div id="mobileMenu" class="md:hidden hidden bg-white border-t animate-fadeIn">
+        <div class="container mx-auto px-4 py-3 flex flex-col space-y-3">
+          <button id="mobileLoginBtn" class="py-2 text-primary border border-primary rounded-lg hover:bg-primary/5 transition-colors">登录</button>
+          <button id="mobileRegisterBtn" class="py-2 gradient-bg text-white rounded-lg hover:opacity-90 transition-opacity">注册</button>
+          <!-- 新增：移动端"了解更多"按钮 -->
+          <button id="mobileLearnMoreBtn" class="py-2 text-primary border border-primary rounded-lg hover:bg-primary/5 transition-colors">
+            了解更多
+          </button>
+          <button id="mobileLogoutBtn" class="py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors hidden">退出登录</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主要内容 - 保持不变，仅为"了解更多"按钮添加ID -->
+    <main class="flex-grow">
+      <!-- 英雄区域 -->
+      <section class="py-16 md:py-24 bg-img-container hero-bg">
+        <div class="container mx-auto px-4 bg-black/20 py-8 md:py-16 rounded-xl">
+          <div class="max-w-3xl mx-auto text-center text-white">
+            <h1 class="text-[clamp(1.8rem,5vw,3rem)] font-bold mb-6">
+              智能预测客户流失<br>提升银行客户留存率
+            </h1>
+            <p class="text-lg mb-10">
+              银行客户流失分析系统，帮助银行精准识别高风险客户，制定挽留策略，降低客户流失率。
+            </p>
+            <div class="flex flex-col sm:flex-row justify-center gap-4">
+              <button id="heroRegisterBtn" class="px-6 py-3 gradient-bg text-white rounded-lg hover:opacity-90 transition-opacity font-medium">
+                免费开始使用
+              </button>
+              <!-- 为"了解更多"按钮添加ID：learnMoreBtn -->
+              <button id="learnMoreBtn" class="px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">
+                了解更多
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 核心功能简介 -->
+      <section class="py-16 bg-img-container features-bg">
+        <div class="container mx-auto px-4 bg-black/20 py-8 rounded-xl">
+          <h2 class="text-2xl font-bold text-center text-white mb-12">核心功能</h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            <div class="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+              <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                <i class="fa fa-line-chart text-primary text-xl"></i>
+              </div>
+              <h3 class="font-bold text-lg mb-2">风险预测</h3>
+              <p class="text-gray-600 text-sm">精准预测客户流失风险，识别高风险客户群体</p>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+              <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                <i class="fa fa-search text-primary text-xl"></i>
+              </div>
+              <h3 class="font-bold text-lg mb-2">原因分析</h3>
+              <p class="text-gray-600 text-sm">深入分析客户流失原因，多维度剖析关键因素</p>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+              <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                <i class="fa fa-lightbulb-o text-primary text-xl"></i>
+              </div>
+              <h3 class="font-bold text-lg mb-2">策略推荐</h3>
+              <p class="text-gray-600 text-sm">生成个性化挽留方案，提高客户留存成功率</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 数据概览 -->
+      <section class="py-16 bg-img-container data-overview-bg">
+        <div class="container mx-auto px-4 bg-black/20 py-8 rounded-xl">
+          <h2 class="text-2xl font-bold text-center text-white mb-12">数据概览</h2>
+
+          <div class="max-w-4xl mx-auto bg-gray-50 p-6 rounded-xl shadow-sm">
+            <div class="h-64">
+              <canvas id="churnChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 页脚 - 保持不变 -->
+    <footer class="bg-gray-800 text-white py-10">
+      <div class="container mx-auto px-4">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+          <div class="mb-6 md:mb-0">
+            <div class="flex items-center space-x-2 mb-4">
+              <div class="w-8 h-8 rounded-lg gradient-bg flex items-center justify-center">
+                <i class="fa fa-line-chart text-white"></i>
+              </div>
+              <span class="font-bold">BankChurnAI</span>
+            </div>
+            <p class="text-gray-400 text-sm max-w-xs">
+              专注于银行客户流失分析与管理的智能解决方案
+            </p>
+          </div>
+
+          <div class="flex flex-col md:flex-row gap-8">
+            <div>
+              <h4 class="font-bold mb-3">支持</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><a href="#" class="hover:text-white transition-colors">帮助中心</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-gray-700 mt-8 pt-8 text-center text-gray-500 text-sm">
+          &copy; 2025 BankChurn. 
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 登录模态框 - 保持不变 -->
+  <div id="loginModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-md shadow-lg animate-fadeIn">
+      <div class="p-6 border-b">
+        <h2 class="text-xl font-bold">账户登录</h2>
+      </div>
+
+      <div class="p-6">
+        <form id="loginForm" class="space-y-4">
+          <div>
+            <label for="loginEmail" class="block text-gray-700 mb-1 text-sm">企业邮箱</label>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fa fa-envelope"></i>
+              </div>
+              <input type="email" id="loginEmail" 
+                     class="w-full pl-10 py-2 border border-gray-300 rounded-lg form-input-focus"
+                     placeholder="your@bank.com" required>
+            </div>
+            <div class="error-message" id="loginEmailError">请输入有效的邮箱地址</div>
+          </div>
+
+          <div>
+            <div class="flex justify-between mb-1">
+              <label for="loginPassword" class="block text-gray-700 text-sm">密码</label>
+              <a href="#" class="text-primary text-sm hover:underline">忘记密码?</a>
+            </div>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fa fa-lock"></i>
+              </div>
+              <input type="password" id="loginPassword" 
+                     class="w-full pl-10 py-2 border border-gray-300 rounded-lg form-input-focus"
+                     placeholder="请输入密码" required>
+              <button type="button" class="toggle-password absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" 
+                      data-target="loginPassword">
+                <i class="fa fa-eye-slash"></i>
+              </button>
+            </div>
+            <div class="error-message" id="loginPasswordError">密码不能为空</div>
+          </div>
+
+          <div class="flex items-center">
+            <input type="checkbox" id="rememberMe" class="mr-2">
+            <label for="rememberMe" class="text-sm text-gray-600">记住我</label>
+          </div>
+
+          <button type="submit" class="w-full py-3 gradient-bg text-white rounded-lg hover:opacity-90 transition-opacity font-medium relative">
+            <span id="loginBtnText">登录</span>
+            <div class="loading-spinner absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+          </button>
+        </form>
+
+        <div class="mt-6 text-center">
+          <p class="text-gray-600 text-sm">
+            还没有账号? <button id="switchToRegister" class="text-primary hover:underline">立即注册</button>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 注册模态框 - 保持不变 -->
+  <div id="registerModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-md shadow-lg animate-fadeIn">
+      <div class="p-6 border-b">
+        <h2 class="text-xl font-bold">创建账户</h2>
+      </div>
+
+      <div class="p-6">
+        <form id="registerForm" class="space-y-4">
+          <div>
+            <label for="registerName" class="block text-gray-700 mb-1 text-sm">联系人姓名</label>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fa fa-user"></i>
+              </div>
+              <input type="text" id="registerName" 
+                     class="w-full pl-10 py-2 border border-gray-300 rounded-lg form-input-focus"
+                     placeholder="您的姓名" required>
+            </div>
+            <div class="error-message" id="registerNameError">请输入您的姓名</div>
+          </div>
+
+          <div>
+            <label for="registerEmail" class="block text-gray-700 mb-1 text-sm">企业邮箱</label>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fa fa-envelope"></i>
+              </div>
+              <input type="email" id="registerEmail" 
+                     class="w-full pl-10 py-2 border border-gray-300 rounded-lg form-input-focus"
+                     placeholder="your@bank.com" required>
+            </div>
+            <div class="error-message" id="registerEmailError">请输入有效的邮箱地址</div>
+          </div>
+
+          <div>
+            <label for="registerPassword" class="block text-gray-700 mb-1 text-sm">设置密码</label>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fa fa-lock"></i>
+              </div>
+              <input type="password" id="registerPassword" 
+                     class="w-full pl-10 py-2 border border-gray-300 rounded-lg form-input-focus"
+                     placeholder="至少8位字符" minlength="8" required>
+              <button type="button" class="toggle-password absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" 
+                      data-target="registerPassword">
+                <i class="fa fa-eye-slash"></i>
+              </button>
+            </div>
+            <div class="error-message" id="registerPasswordError">密码长度不能少于8位</div>
+          </div>
+
+          <div>
+            <label for="registerConfirmPassword" class="block text-gray-700 mb-1 text-sm">确认密码</label>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fa fa-lock"></i>
+              </div>
+              <input type="password" id="registerConfirmPassword" 
+                     class="w-full pl-10 py-2 border border-gray-300 rounded-lg form-input-focus"
+                     placeholder="请再次输入密码" required>
+              <button type="button" class="toggle-password absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" 
+                      data-target="registerConfirmPassword">
+                <i class="fa fa-eye-slash"></i>
+              </button>
+            </div>
+            <div class="error-message" id="registerConfirmError">两次密码输入不一致</div>
+          </div>
+
+          <div class="flex items-start">
+            <input type="checkbox" id="agreeTerms" class="mt-1 mr-2" required>
+            <label for="agreeTerms" class="text-sm text-gray-600">
+              我同意
+              <button type="button" id="openTermsBtn" class="text-primary hover:underline">服务条款</button>
+              和
+              <button type="button" id="openPrivacyBtn" class="text-primary hover:underline">隐私政策</button>
+            </label>
+          </div>
+
+          <button type="submit" class="w-full py-3 gradient-bg text-white rounded-lg hover:opacity-90 transition-opacity font-medium relative">
+            <span id="registerBtnText">注册</span>
+            <div class="loading-spinner absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+          </button>
+        </form>
+
+        <div class="mt-6 text-center">
+          <p class="text-gray-600 text-sm">
+            已有账号? <button id="switchToLogin" class="text-primary hover:underline">立即登录</button>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 成功提示模态框 - 保持不变 -->
+  <div id="successModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-md shadow-lg p-6 text-center animate-fadeIn">
+      <div class="w-16 h-16 bg-success/20 rounded-full flex items-center justify-center mx-auto mb-4">
+        <i class="fa fa-check text-success text-2xl"></i>
+      </div>
+      <h3 class="text-xl font-bold mb-2" id="successTitle">操作成功</h3>
+      <p class="text-gray-600 mb-6" id="successMessage">您的请求已成功提交</p>
+      <button id="successOkBtn" class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90 transition-opacity">
+        确定
+      </button>
+    </div>
+  </div>
+
+  <!-- 服务条款模态框 - 保持不变 -->
+  <div id="termsModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-2xl shadow-lg animate-fadeIn">
+      <div class="p-6 border-b flex justify-between items-center">
+        <h2 class="text-xl font-bold">服务条款</h2>
+        <button id="closeTermsBtn" class="text-gray-400 hover:text-gray-600">
+          <i class="fa fa-times text-xl"></i>
+        </button>
+      </div>
+
+      <div class="p-6 terms-modal-content">
+        <h3 class="text-lg font-bold mb-4">1. 服务范围</h3>
+        <p class="text-gray-600 mb-4">
+          BankChurnAI（以下简称“本平台”）为用户提供银行客户流失分析相关的智能服务，包括但不限于客户流失风险预测、流失原因分析、挽留策略推荐等功能。用户需明确，本平台提供的分析结果仅作为银行客户管理的参考依据，不构成任何商业决策的最终建议。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">2. 用户资格</h3>
+        <p class="text-gray-600 mb-4">
+          2.1 本平台仅对合法设立的银行机构、金融机构或相关企业用户开放注册，个人用户不得注册使用。
+        </p>
+        <p class="text-gray-600 mb-4">
+          2.2 用户需确保注册时提供的联系人姓名、企业邮箱等信息真实、准确、完整，若信息发生变更，应及时更新，否则因信息不准确导致的服务异常，本平台不承担责任。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">3. 账号使用规范</h3>
+        <p class="text-gray-600 mb-4">
+          3.1 用户应妥善保管账号密码，不得将账号转借他人使用。因账号泄露、转借导致的信息安全风险或经济损失，由用户自行承担。
+        </p>
+        <p class="text-gray-600 mb-4">
+          3.2 用户不得利用本平台账号从事任何违法违规活动，包括但不限于上传虚假数据、攻击平台系统、传播恶意软件等，若违反，本平台有权立即封禁账号，并保留追究法律责任的权利。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">4. 服务费用</h3>
+        <p class="text-gray-600 mb-4">
+          4.1 本平台提供免费试用版本，试用期限及功能范围以平台展示为准；试用期满后，用户需根据平台定价方案购买相应服务套餐，方可继续使用。
+        </p>
+        <p class="text-gray-600 mb-4">
+          4.2 服务费用的支付方式、发票开具等事宜，按照平台相关规定执行，用户应在约定时间内完成支付，逾期未支付的，本平台有权暂停或终止服务。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">5. 服务变更与终止</h3>
+        <p class="text-gray-600 mb-4">
+          5.1 本平台有权根据技术发展或业务需求，对服务内容、功能模块进行更新或调整，调整前将通过平台公告或邮件方式提前通知用户。
+        </p>
+        <p class="text-gray-600 mb-4">
+          5.2 若用户出现以下情况，本平台可单方面终止服务：
+          <br>（1）违反本服务条款的任何约定；
+          <br>（2）长期（超过90天）未使用账号且未购买服务套餐；
+          <br>（3）用户主体资格终止（如企业注销、吊销营业执照等）。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">6. 免责声明</h3>
+        <p class="text-gray-600 mb-4">
+          6.1 本平台基于用户提供的数据及行业通用算法生成分析结果，因数据质量、算法局限性等因素，分析结果可能存在偏差，本平台不对结果的准确性、完整性作出绝对保证。
+        </p>
+        <p class="text-gray-600 mb-4">
+          6.2 因不可抗力（如自然灾害、网络中断、第三方服务故障等）导致本平台无法正常提供服务的，本平台不承担违约责任，但应及时通知用户并尽力减少影响。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">7. 条款生效与变更</h3>
+        <p class="text-gray-600">
+          7.1 本服务条款自用户注册并同意之日起生效，对双方具有法律约束力。
+        </p>
+        <p class="text-gray-600">
+          7.2 本平台有权根据法律法规变化或业务调整，对本服务条款进行修订，修订后的条款将在平台公示，公示后7日内用户未提出异议的，视为接受修订内容；若用户不同意修订，可申请终止服务。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐私政策模态框 - 保持不变 -->
+  <div id="privacyModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-2xl shadow-lg animate-fadeIn">
+      <div class="p-6 border-b flex justify-between items-center">
+        <h2 class="text-xl font-bold">隐私政策</h2>
+        <button id="closePrivacyBtn" class="text-gray-400 hover:text-gray-600">
+          <i class="fa fa-times text-xl"></i>
+        </button>
+      </div>
+
+      <div class="p-6 terms-modal-content">
+        <h3 class="text-lg font-bold mb-4">1. 隐私数据收集范围</h3>
+        <p class="text-gray-600 mb-4">
+          1.1 注册信息：用户在注册时提供的联系人姓名、企业邮箱等信息，用于账号创建、身份验证及服务通知。
+        </p>
+        <p class="text-gray-600 mb-4">
+          1.2 业务数据：用户为使用本平台服务上传的银行客户数据（如客户基本信息、账户交易记录、服务使用情况等），仅用于生成客户流失分析结果，不用于其他用途。
+        </p>
+        <p class="text-gray-600 mb-4">
+          1.3 日志数据：平台自动收集的用户操作日志（如登录时间、使用功能、访问IP等），用于优化服务性能、保障账号安全及排查故障。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">2. 数据使用规则</h3>
+        <p class="text-gray-600 mb-4">
+          2.1 本平台仅在为用户提供服务的必要范围内使用收集的隐私数据，不得超出范围用于其他商业目的（如未经用户许可向第三方出售、共享数据）。
+        </p>
+        <p class="text-gray-600 mb-4">
+          2.2 为提升服务质量，本平台可对用户业务数据进行匿名化处理（去除可识别用户身份的信息），生成行业分析报告或优化算法模型，匿名化后的数据不再属于隐私数据，可自由使用。
+        </p>
+        <p class="text-gray-600 mb-4">
+          2.3 因法律法规要求、政府部门调查或保障平台及用户合法权益需要，本平台可在必要范围内披露用户隐私数据，但应提前通知用户（法律法规禁止通知的除外）。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">3. 数据安全保障</h3>
+        <p class="text-gray-600 mb-4">
+          3.1 本平台采用加密传输（HTTPS协议）、数据脱敏、访问权限控制等技术措施，保障用户隐私数据在传输、存储及使用过程中的安全，防止数据泄露、篡改或丢失。
+        </p>
+        <p class="text-gray-600 mb-4">
+          3.2 本平台仅授权必要的工作人员访问用户隐私数据，且工作人员需遵守严格的保密协议，违反协议的将承担法律责任。
+        </p>
+        <p class="text-gray-600 mb-4">
+          3.3 若发生数据安全事件（如数据泄露），本平台将立即启动应急响应机制，采取补救措施，并按照法律法规要求及时通知用户及相关监管部门。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">4. 用户数据权利</h3>
+        <p class="text-gray-600 mb-4">
+          4.1 访问与修改：用户可登录账号，查看或修改自身注册信息及上传的业务数据（修改后可能影响历史分析结果，需谨慎操作）。
+        </p>
+        <p class="text-gray-600 mb-4">
+          4.2 数据删除：用户可申请删除账号及所有相关隐私数据，申请通过后，本平台将在15个工作日内完成数据删除（法律法规要求保留的除外），删除后账号不可恢复。
+        </p>
+        <p class="text-gray-600 mb-4">
+          4.3 异议与投诉：若用户认为本平台对隐私数据的收集、使用或披露违反本政策，可通过平台客服渠道提出异议或投诉，本平台将在7个工作日内予以回复并处理。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">5. 数据保留期限</h3>
+        <p class="text-gray-600 mb-4">
+          5.1 注册信息及业务数据：在用户账号存续期间，本平台将持续保留；账号注销后，除法律法规要求保留的期限外，将在15个工作日内删除。
+        </p>
+        <p class="text-gray-600 mb-4">
+          5.2 日志数据：保留期限为1年，逾期后将自动匿名化处理或删除，不再保留可识别用户身份的信息。
+        </p>
+
+        <h3 class="text-lg font-bold mb-4">6. 政策生效与更新</h3>
+        <p class="text-gray-600">
+          6.1 本隐私政策自用户注册并同意之日起生效，与服务条款具有同等法律效力。
+        </p>
+        <p class="text-gray-600">
+          6.2 本平台可根据法律法规变化或数据安全需求，对本隐私政策进行更新，更新后的政策将在平台公示，公示后7日内用户未提出异议的，视为接受更新内容；若用户不同意更新，可申请注销账号。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增："了解更多"详情模态框 -->
+  <div id="learnMoreModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-4xl shadow-lg animate-fadeIn">
+      <div class="p-6 border-b flex justify-between items-center">
+        <h2 class="text-xl font-bold">BankChurnAI - 银行客户流失分析系统</h2>
+        <button id="closeLearnMoreBtn" class="text-gray-400 hover:text-gray-600">
+          <i class="fa fa-times text-xl"></i>
+        </button>
+      </div>
+
+      <div class="p-6 detail-modal-content">
+        <!-- 系统介绍 -->
+        <div class="mb-10">
+          <h3 class="text-xl font-bold text-primary mb-4 flex items-center">
+            <i class="fa fa-info-circle mr-2"></i>系统简介
+          </h3>
+          <p class="text-gray-600 mb-4">
+            BankChurnAI 是专为银行机构打造的智能客户流失分析系统，基于机器学习算法与大数据分析技术，通过对客户行为数据、账户信息、服务使用记录等多维度数据的深度挖掘，实现客户流失风险的精准预测、流失原因的可视化分析及个性化挽留策略的智能推荐，帮助银行降低客户流失率，提升客户生命周期价值。
+          </p>
+          <p class="text-gray-600">
+            系统适用于各类商业银行、信用社、村镇银行等金融机构，已服务全国30+省市的100+银行客户，平均帮助客户降低流失率25%-40%，提升客户留存率15%-30%。
+          </p>
+        </div>
+
+        <!-- 核心优势 -->
+        <div class="mb-10">
+          <h3 class="text-xl font-bold text-primary mb-6 flex items-center">
+            <i class="fa fa-star mr-2"></i>核心优势
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-gray-50 p-5 rounded-xl detail-card border border-gray-100">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                <i class="fa fa-bolt text-primary"></i>
+              </div>
+              <h4 class="font-bold mb-2">高精度预测</h4>
+              <p class="text-gray-600 text-sm">
+                融合XGBoost、随机森林等多种机器学习模型，通过特征工程优化与交叉验证，预测准确率达92%以上，精准识别高风险流失客户。
+              </p>
+            </div>
+            <div class="bg-gray-50 p-5 rounded-xl detail-card border border-gray-100">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                <i class="fa fa-pie-chart text-primary"></i>
+              </div>
+              <h4 class="font-bold mb-2">多维度分析</h4>
+              <p class="text-gray-600 text-sm">
+                从客户 demographics、账户活跃度、产品持有情况、客服交互记录等12个维度剖析流失原因，生成可视化分析报告。
+              </p>
+            </div>
+            <div class="bg-gray-50 p-5 rounded-xl detail-card border border-gray-100">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                <i class="fa fa-magic text-primary"></i>
+              </div>
+              <h4 class="font-bold mb-2">个性化策略</h4>
+              <p class="text-gray-600 text-sm">
+                基于客户流失原因标签，自动匹配挽留策略库（如利率优惠、增值服务、专属客服等），生成可直接执行的个性化方案。
+              </p>
+            </div>
+            <div class="bg-gray-50 p-5 rounded-xl detail-card border border-gray-100">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                <i class="fa fa-shield text-primary"></i>
+              </div>
+              <h4 class="font-bold mb-2">安全合规</h4>
+              <p class="text-gray-600 text-sm">
+                符合《个人信息保护法》《银行业金融机构数据治理指引》等法规要求，数据传输加密、存储脱敏，保障客户信息安全。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 适用场景 -->
+        <div class="mb-10">
+          <h3 class="text-xl font-bold text-primary mb-6 flex items-center">
+            <i class="fa fa-map-marker mr-2"></i>适用场景
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="text-primary mb-2"><i class="fa fa-users text-xl"></i></div>
+              <h4 class="font-bold mb-2">零售银行</h4>
+              <p class="text-gray-600 text-sm">
+                针对个人储蓄、理财、信贷客户的流失预警与挽留
+              </p>
+            </div>
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="text-primary mb-2"><i class="fa fa-building text-xl"></i></div>
+              <h4 class="font-bold mb-2">公司银行</h4>
+              <p class="text-gray-600 text-sm">
+                企业账户流失风险预测，维护核心企业客户关系
+              </p>
+            </div>
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="text-primary mb-2"><i class="fa fa-credit-card text-xl"></i></div>
+              <h4 class="font-bold mb-2">信用卡中心</h4>
+              <p class="text-gray-600 text-sm">
+                信用卡客户活跃度监测与流失干预，提升卡均收益
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 技术支撑 -->
+        <div class="mb-10">
+          <h3 class="text-xl font-bold text-primary mb-4 flex items-center">
+            <i class="fa fa-code mr-2"></i>技术支撑
+          </h3>
+          <div class="bg-gray-50 p-5 rounded-xl border border-gray-100">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div class="text-center">
+                <h5 class="font-medium text-gray-700 mb-1">前端框架</h5>
+                <p class="text-gray-600 text-sm">Vue.js + Element Plus</p>
+              </div>
+              <div class="text-center">
+                <h5 class="font-medium text-gray-700 mb-1">后端框架</h5>
+                <p class="text-gray-600 text-sm">Spring Boot + Flask</p>
+              </div>
+              <div class="text-center">
+                <h5 class="font-medium text-gray-700 mb-1">算法引擎</h5>
+                <p class="text-gray-600 text-sm">Scikit-learn + TensorFlow</p>
+              </div>
+            </div>
+            <p class="text-gray-600 text-sm text-center">
+              支持私有化部署与云端SaaS服务两种模式，提供API接口与Excel数据导入导出功能，适配银行现有IT系统。
+            </p>
+          </div>
+        </div>
+
+        <!-- 服务流程 -->
+        <div>
+          <h3 class="text-xl font-bold text-primary mb-6 flex items-center">
+            <i class="fa fa-tasks mr-2"></i>服务流程
+          </h3>
+          <div class="relative">
+            <!-- 连接线 -->
+            <div class="absolute left-4 top-0 bottom-0 w-0.5 bg-primary/20 hidden md:block"></div>
+            <div class="space-y-8">
+              <div class="flex items-start md:items-center">
+                <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center z-10 flex-shrink-0">1</div>
+                <div class="ml-4 md:ml-6">
+                  <h4 class="font-bold mb-1">需求沟通</h4>
+                  <p class="text-gray-600 text-sm">
+                    了解银行客户规模、业务场景、核心痛点，定制个性化分析方案
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-start md:items-center">
+                <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center z-10 flex-shrink-0">2</div>
+                <div class="ml-4 md:ml-6">
+                  <h4 class="font-bold mb-1">数据对接</h4>
+                  <p class="text-gray-600 text-sm">
+                    对接银行核心系统、CRM、客服系统等数据源，完成数据清洗与预处理
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-start md:items-center">
+                <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center z-10 flex-shrink-0">3</div>
+                <div class="ml-4 md:ml-6">
+                  <h4 class="font-bold mb-1">模型训练</h4>
+                  <p class="text-gray-600 text-sm">
+                    基于历史流失数据训练预测模型，通过A/B测试优化模型效果
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-start md:items-center">
+                <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center z-10 flex-shrink-0">4</div>
+                <div class="ml-4 md:ml-6">
+                  <h4 class="font-bold mb-1">系统部署</h4>
+                  <p class="text-gray-600 text-sm">
+                    完成系统部署与用户培训，提供7×24小时技术支持
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-start md:items-center">
+                <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center z-10 flex-shrink-0">5</div>
+                <div class="ml-4 md:ml-6">
+                  <h4 class="font-bold mb-1">效果迭代</h4>
+                  <p class="text-gray-600 text-sm">
+                    定期评估模型效果，根据业务变化更新模型参数与策略库
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // DOM元素 - 新增"了解更多"相关元素
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileMenu = document.getElementById('mobileMenu');
+    const loginBtn = document.getElementById('loginBtn');
+    const registerBtn = document.getElementById('registerBtn');
+    const mobileLoginBtn = document.getElementById('mobileLoginBtn');
+    const mobileRegisterBtn = document.getElementById('mobileRegisterBtn');
+    const heroRegisterBtn = document.getElementById('heroRegisterBtn');
+    const loginModal = document.getElementById('loginModal');
+    const registerModal = document.getElementById('registerModal');
+    const successModal = document.getElementById('successModal');
+    const successTitle = document.getElementById('successTitle');
+    const successMessage = document.getElementById('successMessage');
+    const successOkBtn = document.getElementById('successOkBtn');
+    const switchToRegister = document.getElementById('switchToRegister');
+    const switchToLogin = document.getElementById('switchToLogin');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const togglePasswordBtns = document.querySelectorAll('.toggle-password');
+    const userMenu = document.getElementById('userMenu');
+    const userName = document.getElementById('userName');
+    const mobileLogoutBtn = document.getElementById('mobileLogoutBtn');
+    // 条款模态框元素
+    const openTermsBtn = document.getElementById('openTermsBtn');
+    const openPrivacyBtn = document.getElementById('openPrivacyBtn');
+    const termsModal = document.getElementById('termsModal');
+    const privacyModal = document.getElementById('privacyModal');
+    const closeTermsBtn = document.getElementById('closeTermsBtn');
+    const closePrivacyBtn = document.getElementById('closePrivacyBtn');
+    // 新增"了解更多"元素
+    const learnMoreBtn = document.getElementById('learnMoreBtn');
+    const mobileLearnMoreBtn = document.getElementById('mobileLearnMoreBtn');
+    const learnMoreModal = document.getElementById('learnMoreModal');
+    const closeLearnMoreBtn = document.getElementById('closeLearnMoreBtn');
+    
+    // 导航菜单切换 - 保持不变
+    mobileMenuBtn.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+    
+    // 模态框控制 - 优化通用函数，支持所有模态框
+    function openModal(modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+    }
+    
+    function closeModal(modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      document.body.style.overflow = '';
+    }
+    
+    // 打开登录模态框 - 保持不变
+    [loginBtn, mobileLoginBtn].forEach(btn => {
+      btn.addEventListener('click', () => {
+        openModal(loginModal);
+      });
+    });
+    
+    // 打开注册模态框 - 保持不变
+    [registerBtn, mobileRegisterBtn, heroRegisterBtn].forEach(btn => {
+      btn.addEventListener('click', () => {
+        openModal(registerModal);
+      });
+    });
+    
+    // 新增：打开"了解更多"模态框
+    [learnMoreBtn, mobileLearnMoreBtn].forEach(btn => {
+      btn.addEventListener('click', () => {
+        openModal(learnMoreModal);
+      });
+    });
+    
+    // 关闭模态框 - 点击背景 - 新增"了解更多"模态框
+    [loginModal, registerModal, successModal, termsModal, privacyModal, learnMoreModal].forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          closeModal(modal);
+        }
+      });
+    });
+    
+    // 模态框切换 - 保持不变
+    switchToRegister.addEventListener('click', () => {
+      closeModal(loginModal);
+      openModal(registerModal);
+    });
+    
+    switchToLogin.addEventListener('click', () => {
+      closeModal(registerModal);
+      openModal(loginModal);
+    });
+    
+    // 成功提示框确定按钮 - 保持不变
+    successOkBtn.addEventListener('click', () => {
+      closeModal(successModal);
+    });
+    
+    // 条款模态框关闭 - 保持不变
+    closeTermsBtn.addEventListener('click', () => {
+      closeModal(termsModal);
+    });
+    
+    closePrivacyBtn.addEventListener('click', () => {
+      closeModal(privacyModal);
+    });
+    
+    // 新增："了解更多"模态框关闭
+    closeLearnMoreBtn.addEventListener('click', () => {
+      closeModal(learnMoreModal);
+    });
+    
+    // 密码显示/隐藏切换 - 保持不变
+    togglePasswordBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-target');
+        const passwordInput = document.getElementById(targetId);
+        const icon = btn.querySelector('i');
+        
+        if (passwordInput.type === 'password') {
+          passwordInput.type = 'text';
+          icon.classList.remove('fa-eye-slash');
+          icon.classList.add('fa-eye');
+        } else {
+          passwordInput.type = 'password';
+          icon.classList.remove('fa-eye');
+          icon.classList.add('fa-eye-slash');
+        }
+      });
+    });
+    
+    // 条款模态框打开 - 保持不变
+    openTermsBtn.addEventListener('click', (e) => {
+      e.preventDefault(); // 阻止默认行为（避免表单提交）
+      openModal(termsModal);
+    });
+    
+    openPrivacyBtn.addEventListener('click', (e) => {
+      e.preventDefault(); // 阻止默认行为
+      openModal(privacyModal);
+    });
+    
+    // 表单验证函数 - 保持不变
+    function validateEmail(email) {
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(email);
+    }
+    
+    // 登录表单提交 - 保持不变
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+      const emailError = document.getElementById('loginEmailError');
+      const passwordError = document.getElementById('loginPasswordError');
+      const loginBtnText = document.getElementById('loginBtnText');
+      const loadingSpinner = loginForm.querySelector('.loading-spinner');
+      
+      let isValid = true;
+      
+      // 验证邮箱
+      if (!validateEmail(email)) {
+        emailError.classList.remove('hidden');
+        isValid = false;
+      } else {
+        emailError.classList.add('hidden');
+      }
+      
+      // 验证密码
+      if (password.trim() === '') {
+        passwordError.classList.remove('hidden');
+        isValid = false;
+      } else {
+        passwordError.classList.add('hidden');
+      }
+      
+      if (isValid) {
+        // 显示加载状态
+        loginBtnText.textContent = '';
+        loadingSpinner.classList.remove('hidden');
+        loginForm.querySelectorAll('input, button').forEach(el => {
+          el.disabled = true;
+        });
+        
+        // 模拟API请求
+        setTimeout(() => {
+          // 隐藏加载状态
+          loginBtnText.textContent = '登录';
+          loadingSpinner.classList.add('hidden');
+          loginForm.querySelectorAll('input, button').forEach(el => {
+            el.disabled = false;
+          });
+          
+          // 显示成功消息
+          successTitle.textContent = '登录成功';
+          successMessage.textContent = '欢迎回来！正在为您跳转...';
+          openModal(successModal);
+          
+          // 重置表单
+          loginForm.reset();
+          
+          // 关闭登录模态框
+          setTimeout(() => {
+            closeModal(loginModal);
+            closeModal(successModal);
+            
+            // 更新UI显示登录状态
+            updateLoginStatus(email.split('@')[0]);
+          }, 1500);
+        }, 1500);
+      }
+    });
+    
+    // 注册表单提交 - 保持不变
+    registerForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const name = document.getElementById('registerName').value;
+      const email = document.getElementById('registerEmail').value;
+      const password = document.getElementById('registerPassword').value;
+      const confirmPassword = document.getElementById('registerConfirmPassword').value;
+      const nameError = document.getElementById('registerNameError');
+      const emailError = document.getElementById('registerEmailError');
+      const passwordError = document.getElementById('registerPasswordError');
+      const confirmError = document.getElementById('registerConfirmError');
+      const registerBtnText = document.getElementById('registerBtnText');
+      const loadingSpinner = registerForm.querySelector('.loading-spinner');
+      
+      let isValid = true;
+      
+      // 验证姓名
+      if (name.trim() === '') {
+        nameError.classList.remove('hidden');
+        isValid = false;
+      } else {
+        nameError.classList.add('hidden');
+      }
+      
+      // 验证邮箱
+      if (!validateEmail(email)) {
+        emailError.classList.remove('hidden');
+        isValid = false;
+      } else {
+        emailError.classList.add('hidden');
+      }
+      
+      // 验证密码
+      if (password.length < 8) {
+        passwordError.classList.remove('hidden');
+        isValid = false;
+      } else {
+        passwordError.classList.add('hidden');
+      }
+      
+      // 验证确认密码
+      if (password !== confirmPassword) {
+        confirmError.classList.remove('hidden');
+        isValid = false;
+      } else {
+        confirmError.classList.add('hidden');
+      }
+      
+      if (isValid) {
+        // 显示加载状态
+        registerBtnText.textContent = '';
+        loadingSpinner.classList.remove('hidden');
+        registerForm.querySelectorAll('input, button').forEach(el => {
+          el.disabled = true;
+        });
+        
+        // 模拟API请求
+        setTimeout(() => {
+          // 隐藏加载状态
+          registerBtnText.textContent = '注册';
+          loadingSpinner.classList.add('hidden');
+          registerForm.querySelectorAll('input, button').forEach(el => {
+            el.disabled = false;
+          });
+          
+          // 显示成功消息
+          successTitle.textContent = '注册成功';
+          successMessage.textContent = '您的账户已创建，即将跳转到登录页面...';
+          openModal(successModal);
+          
+          // 重置表单
+          registerForm.reset();
+          
+          // 关闭注册模态框并打开登录模态框
+          setTimeout(() => {
+            closeModal(registerModal);
+            closeModal(successModal);
+            openModal(loginModal);
+          }, 1500);
+        }, 1500);
+      }
+    });
+    
+    // 更新登录状态UI - 保持不变
+    function updateLoginStatus(username) {
+      // 显示用户信息，隐藏登录/注册按钮
+      userName.textContent = username;
+      userMenu.classList.remove('hidden');
+      userMenu.classList.add('flex');
+      loginBtn.classList.add('hidden');
+      registerBtn.classList.add('hidden');
+      mobileLoginBtn.classList.add('hidden');
+      mobileRegisterBtn.classList.add('hidden');
+      mobileLearnMoreBtn.classList.add('hidden'); // 登录后隐藏移动端"了解更多"
+      mobileLogoutBtn.classList.remove('hidden');
+      
+      // 存储登录状态到本地存储
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('username', username);
+    }
+    
+    // 退出登录 - 保持不变
+    function logout() {
+      // 隐藏用户信息，显示登录/注册按钮
+      userMenu.classList.add('hidden');
+      userMenu.classList.remove('flex');
+      loginBtn.classList.remove('hidden');
+      registerBtn.classList.remove('hidden');
+      mobileLoginBtn.classList.remove('hidden');
+      mobileRegisterBtn.classList.remove('hidden');
+      mobileLearnMoreBtn.classList.remove('hidden'); // 退出后显示移动端"了解更多"
+      mobileLogoutBtn.classList.add('hidden');
+      
+      // 清除本地存储
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('username');
+      
+      // 关闭移动菜单
+      mobileMenu.classList.add('hidden');
+    }
+    
+    mobileLogoutBtn.addEventListener('click', logout);
+    
+    // 页面加载时检查登录状态 - 保持不变
+    window.addEventListener('DOMContentLoaded', () => {
+      const isLoggedIn = localStorage.getItem('isLoggedIn');
+      const username = localStorage.getItem('username');
+      
+      if (isLoggedIn === 'true' && username) {
+        updateLoginStatus(username);
+      }
+      
+      // 初始化图表 - 保持不变
+      initChart();
+    });
+    
+    // 初始化流失率图表 - 保持不变
+    function initChart() {
+      const ctx = document.getElementById('churnChart').getContext('2d');
+      
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['1月', '2月', '3月', '4月', '5月', '6月'],
+          datasets: [{
+            label: '客户流失率 (%)',
+            data: [12, 19, 15, 8, 10, 7],
+            borderColor: '#4A90E2',
+            backgroundColor: 'rgba(74, 144, 226, 0.1)',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: '近6个月客户流失率趋势'
+            },
+            legend: {
+              position: 'bottom'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 20,
+              ticks: {
+                callback: function(value) {
+                  return value + '%';
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+
+</html>
